@@ -71,6 +71,38 @@ e^x=\sum_{n=0}^{\infty}\frac{x^n}{n!}
 \[
 f(x)=\frac{1}{\sigma\sqrt{2\pi}}e^{-\frac{(x-\mu)^2}{2\sigma^2}}
 \]`,
+  "inline-scale": String.raw`## Adaptive inline math
+
+Plain neighbors: this paragraph should stay compact with no extra rows.
+
+Simple: $x+y=z$ and $a=b$ should usually fit one row.
+
+Scripts: $x^2+y_i$ and $e^{i\pi}+1=0$ next to normal text.
+
+Fraction: $\frac{x^2+1}{y_1}$ between words, with prose above and below.
+This continuation should not collide with the fraction.
+
+Integral: $S[q]=\int_{t_0}^{t_1}L(q,\dot q,t)\,dt$ inside a sentence.
+
+Shared space: $x$ then $\frac{a}{b}$ then $\displaystyle\sum_{n=0}^{\infty}\frac{x^n}{n!}$ all on one line when wide enough.
+
+Tall: $\displaystyle\frac{1}{1+\frac{1}{1+\frac{1}{x}}}$ should reserve more space instead of becoming tiny.
+
+Wrapping: here is enough introductory text to push $\frac{a^2+b^2}{c^2+d^2}$ toward the right edge, followed by more prose and another formula $\int_a^b f(x)\,dx$ to exercise separate wrapped lines.
+
+- List item with $\frac{a+b}{c+d}$ and trailing text.
+- Another item with $x=1$ stays compact.
+
+> Quoted math $\frac{\alpha}{\beta}$ with indentation.
+
+Unicode prefix: 世界 → $\frac{p}{q}$ followed by **bold text**.
+
+Display math remains unchanged:
+\[
+\frac{x^2+1}{y_1}
+\]
+
+Final ordinary paragraph: no image should overlap this text.`,
   inline: String.raw`## Variational calculus in a single Markdown response
 
 Let \(q:[t_0,t_1]\to\mathbb{R}^n\) be a smooth path with fixed endpoints, and let \(L(q,\dot q,t)\) be its Lagrangian. The action is \(S[q]=\int_{t_0}^{t_1}L(q,\dot q,t)\,dt\).
@@ -129,7 +161,10 @@ await piMathExtension(mockPi);
 
 const requestedWidth = process.env.MATH_WIDTH ?? String(process.stdout.columns ?? 100);
 const width = Number.parseInt(requestedWidth, 10);
-const markdown = new Markdown(source, 1, 0, getMarkdownTheme());
+const label = fixtureName === "inline-scale"
+  ? `PI_MATH_INLINE_MIN_SCALE=${process.env.PI_MATH_INLINE_MIN_SCALE ?? "0 (default)"}\n\n`
+  : "";
+const markdown = new Markdown(label + source, 1, 0, getMarkdownTheme());
 const lines = markdown.render(Number.isFinite(width) ? width : 100);
 process.stdout.write(`\x1b[2J\x1b[H${lines.map((line) => line.trimEnd()).join("\n")}\x1b[0m\n`);
 

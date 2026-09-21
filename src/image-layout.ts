@@ -1,4 +1,4 @@
-import { getCapabilities, renderImage } from "@earendil-works/pi-tui";
+import { getCapabilities, renderImage, visibleWidth } from "@earendil-works/pi-tui";
 import { kittyPlaceholderSupport, renderKittyVirtualImage } from "./kitty-graphics.js";
 import type { FormulaRaster } from "./svg-renderer.js";
 
@@ -82,6 +82,61 @@ function renderInlinePlacement(placement: FormulaImagePlacement): string | undef
   return `${" ".repeat(columns)}\x1b[${columns}D${rendered.sequence}\x1b[${columns}C`;
 }
 
+/** Only whitespace and SGR styling are reusable, never borders or image controls. */
+function isReusableBlank(line: string): boolean {
+  return /^[ \t]*$/.test(line.replace(/\x1b\[[0-9;:]*m/g, ""));
+}
+
+/** Balance extra rows around prose, giving an odd extra row to the top. */
+function renderInlineBand(
+  line: string,
+  placements: FormulaImagePlacement[],
+): { lines: string[]; above: number; below: number } | undefined {
+  const present = placements
+    .map((placement) => ({ placement, index: line.indexOf(placement.marker) }))
+    .filter(({ index }) => index >= 0)
+    .sort((a, b) => a.index - b.index);
+  if (!present.some(({ placement }) => placement.raster.rows > 1)) return undefined;
+  if (getCapabilities().images !== "kitty") return undefined;
+
+  const prepared = present.map(({ placement, index }) => {
+    const { columns, rows } = placement.raster;
+    const virtual = kittyPlaceholderSupport()
+      ? renderKittyVirtualImage(placement.raster.base64Data, placement.imageId, columns, rows)
+      : undefined;
+    const native = virtual ? undefined : renderNativeImage(placement);
+    const imageRows = virtual
+      ? virtual.placeholders.map((row, i) => (i === 0 ? virtual.sequence : "") + row)
+      : native
+        ? Array.from({ length: rows }, (_, i) => i === 0
+            ? `${" ".repeat(columns)}\x1b[${columns}D${native.sequence}\x1b[${columns}C`
+            : " ".repeat(columns))
+        : undefined;
+    return { placement, index, imageRows, column: visibleWidth(line.slice(0, index)) };
+  });
+  if (prepared.some(({ imageRows }) => !imageRows)) return undefined;
+
+  const above = Math.max(...prepared.map(({ placement }) => Math.ceil((placement.raster.rows - 1) / 2)));
+  const below = Math.max(...prepared.map(({ placement }) => Math.floor((placement.raster.rows - 1) / 2)));
+  const lines = Array.from({ length: above + 1 + below }, (_, row) => {
+    let output = "";
+    let endIndex = 0;
+    let endColumn = 0;
+    for (const { placement, index, column, imageRows } of prepared) {
+      output += row === above
+        ? line.slice(endIndex, index)
+        : " ".repeat(Math.max(0, column - endColumn));
+      const imageRow = row - above + Math.ceil((placement.raster.rows - 1) / 2);
+      output += imageRows![imageRow] ?? " ".repeat(placement.raster.columns);
+      endIndex = index + placement.marker.length;
+      endColumn = column + placement.raster.columns;
+    }
+    if (row === above) output += line.slice(endIndex);
+    return output;
+  });
+  return { lines, above, below };
+}
+
 /** Replace generated Markdown markers with terminal-native image placements. */
 export function insertFormulaImages(
   lines: string[],
@@ -92,11 +147,15 @@ export function insertFormulaImages(
   const output: string[] = [];
   const blockPlacements = placements.filter(({ inline }) => !inline);
   const inlinePlacements = placements.filter(({ inline }) => inline);
+  // Track only unclaimed source blanks. Native image continuation rows can look
+  // empty but are occupied, so inspecting the rendered output is not sufficient.
+  let trailingBlanks = 0;
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
     const line = lines[lineIndex]!;
     const block = blockPlacements.find(({ marker }) => line.includes(marker));
     if (block) {
+      trailingBlanks = 0;
       const imageLines = renderBlockPlacement(block, area);
       const blockLines =
         imageLines ?? [line.replace(block.marker, () => block.fallbackText)];
@@ -112,6 +171,20 @@ export function insertFormulaImages(
       continue;
     }
 
+    const band = renderInlineBand(line, inlinePlacements);
+    if (band) {
+      const reuseAbove = Math.min(band.above, trailingBlanks);
+      output.length -= reuseAbove;
+      for (let reused = 0; reused < band.below; reused++) {
+        const next = lines[lineIndex + 1];
+        if (next === undefined || !isReusableBlank(next)) break;
+        lineIndex++;
+      }
+      output.push(...band.lines);
+      trailingBlanks = 0;
+      continue;
+    }
+
     let renderedLine = line;
     for (const placement of inlinePlacements) {
       if (!renderedLine.includes(placement.marker)) continue;
@@ -119,6 +192,7 @@ export function insertFormulaImages(
       renderedLine = renderedLine.replace(placement.marker, () => image);
     }
     output.push(renderedLine);
+    trailingBlanks = isReusableBlank(line) ? trailingBlanks + 1 : 0;
   }
 
   return output;

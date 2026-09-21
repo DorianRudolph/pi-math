@@ -5,6 +5,7 @@ import {
   getCellDimensions,
   type DefaultTextStyle,
 } from "@earendil-works/pi-tui";
+import { loadInlineMinScale } from "./config.js";
 import { insertFormulaImages, type FormulaImagePlacement } from "./image-layout.js";
 import type { TerminalMathRenderer } from "./renderer.js";
 import { resolveFormulaColor } from "./text-color.js";
@@ -137,7 +138,8 @@ export function installMarkdownMathPatch(renderer: TerminalMathRenderer): MathPa
     const color = formulaColor(markdown);
     const cells = getCellDimensions();
     const contentWidth = Math.max(1, width - paddingX * 2);
-    const layoutKey = `${width}:${paddingX}:${color}:${protocol}:${cells.widthPx}:${cells.heightPx}`;
+    const inlineMinScale = loadInlineMinScale();
+    const layoutKey = `${width}:${paddingX}:${color}:${protocol}:${cells.widthPx}:${cells.heightPx}:${inlineMinScale}`;
     const maxBlockRows = Math.max(1, Math.floor(MAX_RASTER_HEIGHT_PX / cells.heightPx));
 
     let transformed: string;
@@ -155,10 +157,11 @@ export function installMarkdownMathPatch(renderer: TerminalMathRenderer): MathPa
 
         const raster = renderer.render(latex, display, color, {
           maxWidthCells: contentWidth,
-          maxHeightCells: inline ? 1 : maxBlockRows,
+          maxHeightCells: inline && inlineMinScale === 0 ? 1 : maxBlockRows,
           cellWidthPx: cells.widthPx,
           cellHeightPx: cells.heightPx,
           fitHeight: inline,
+          inlineMinScale: inline ? inlineMinScale : 0,
         });
         if (!raster) return undefined;
 

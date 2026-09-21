@@ -35,6 +35,8 @@ export interface FormulaRasterLayout {
   cellWidthPx: number;
   cellHeightPx: number;
   fitHeight?: boolean;
+  /** Fit one row, but reserve extra rows rather than shrink below this scale. */
+  inlineMinScale?: number;
 }
 
 export interface FormulaInkBounds {
@@ -136,6 +138,7 @@ function paddedSvg(
   contentHeight: number,
   canvasWidth: number,
   canvasHeight: number,
+  bottomPadding?: number,
 ): string | undefined {
   const openingEnd = source.indexOf(">");
   if (openingEnd < 0) return undefined;
@@ -147,7 +150,9 @@ function paddedSvg(
     .trim();
   const body = source.slice(openingEnd + 1, -6);
   const x = Math.max(0, (canvasWidth - contentWidth) / 2);
-  const y = Math.max(0, (canvasHeight - contentHeight) / 2);
+  const y = Math.max(0, bottomPadding === undefined
+    ? (canvasHeight - contentHeight) / 2
+    : canvasHeight - contentHeight - bottomPadding);
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${canvasWidth}" height="${canvasHeight}" viewBox="0 0 ${canvasWidth} ${canvasHeight}" color="${color}">`,
     `<svg x="${x}" y="${y}" width="${contentWidth}" height="${contentHeight}" overflow="visible" ${cleanedOpening}>`,
@@ -164,6 +169,8 @@ function normalizedLayout(layout: FormulaRasterLayout): Required<FormulaRasterLa
     cellWidthPx: Math.max(1, layout.cellWidthPx),
     cellHeightPx: Math.max(1, layout.cellHeightPx),
     fitHeight: layout.fitHeight ?? false,
+    inlineMinScale: Number.isFinite(layout.inlineMinScale)
+      ? Math.max(0, Math.min(1, layout.inlineMinScale!)) : 0,
   };
 }
 
@@ -308,6 +315,7 @@ export async function createSvgMathRenderer(
       layout.cellWidthPx,
       layout.cellHeightPx,
       layout.fitHeight ? "fit-height" : "width-only",
+      layout.inlineMinScale,
       latex,
     ].join("\0");
     if (rasterCache.has(rasterKey)) {
@@ -340,9 +348,12 @@ export async function createSvgMathRenderer(
         }
 
         const widthPixelsPerEx = innerWidth / svg.widthEx;
-        const heightPixelsPerEx = layout.fitHeight
-          ? innerHeight / svg.heightEx
-          : Number.POSITIVE_INFINITY;
+        const heightPixelsPerEx = layout.inlineMinScale > 0
+          ? Math.max(
+              (layout.cellHeightPx - contentBleedPx * 2) / svg.heightEx,
+              basePixelsPerEx * layout.inlineMinScale,
+            )
+          : layout.fitHeight ? innerHeight / svg.heightEx : Number.POSITIVE_INFINITY;
         const pixelsPerEx = Math.min(
           basePixelsPerEx,
           widthPixelsPerEx,
@@ -391,6 +402,8 @@ export async function createSvgMathRenderer(
           contentHeight,
           canvasWidth,
           canvasHeight,
+          layout.inlineMinScale > 0 && rows > 1
+            ? contentBleedPx * deviceScale : undefined,
         );
         if (!padded) {
           return rememberFailure(failure("invalid-svg", "Could not construct the padded SVG"));

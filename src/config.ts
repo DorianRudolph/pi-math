@@ -36,6 +36,12 @@ function systemFontsEnabled(value: string | undefined): boolean {
   return value !== "0" && value.toLowerCase() !== "false";
 }
 
+/** Invalid or unset values preserve the legacy one-row behavior. */
+export function loadInlineMinScale(environment: NodeJS.ProcessEnv = process.env): number {
+  const value = Number(environment.PI_MATH_INLINE_MIN_SCALE ?? 0);
+  return Number.isFinite(value) && value >= 0 && value <= 1 ? value : 0;
+}
+
 /** Read optional, process-local renderer settings without network or subprocesses. */
 export function loadSvgMathRendererOptions(
   environment: NodeJS.ProcessEnv = process.env,
