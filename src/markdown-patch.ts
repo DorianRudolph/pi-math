@@ -6,6 +6,7 @@ import {
   type DefaultTextStyle,
   type Component,
   type TuiMouseEvent,
+  type MarkdownOptions,
 } from "@earendil-works/pi-tui";
 import { loadInlineMinScale } from "./config.js";
 import { annotateFullscreenMath } from "./fullscreen-copy.js";
@@ -24,6 +25,7 @@ type MarkdownInternals = {
   text: string;
   paddingX?: number;
   defaultTextStyle?: DefaultTextStyle;
+  options?: MarkdownOptions;
 };
 
 type MarkdownRender = (this: Markdown, width: number) => string[];
@@ -46,7 +48,11 @@ interface TransformLineage {
 
 const MAX_TRANSFORM_LINEAGES = 32;
 
+export type MathRenderMode = "on" | "off" | "raw";
+
 export interface MathPatchController {
+  getMode(): MathRenderMode;
+  setMode(mode: MathRenderMode): void;
   isEnabled(): boolean;
   setEnabled(enabled: boolean): void;
   clearTransformCache(): void;
@@ -123,7 +129,7 @@ export function installMarkdownMathPatch(
   const { inlineMinScale, color: configuredColor } = options;
   const baseRender = Markdown.prototype.render;
   let nestedRender: MarkdownRender = baseRender;
-  let enabled = true;
+  let mode: MathRenderMode = "on";
   let installed = true;
   let transformCache = new WeakMap<Markdown, CachedTransform>();
   let transformLineages: TransformLineage[] = [];
@@ -137,7 +143,7 @@ export function installMarkdownMathPatch(
   // terminal mouse tracking or intercept raw input: regular mode stays untouched.
   const patchedMouse = function (this: Markdown, event: TuiMouseEvent) {
     const layout = hitLayouts.get(this);
-    if (installed && enabled && onFormulaClick && event.type === "click" &&
+    if (installed && mode === "on" && onFormulaClick && event.type === "click" &&
         event.button === "left" && !event.shift && !event.alt && !event.ctrl &&
         layout?.width === event.width &&
         layout.source === (this as unknown as MarkdownInternals).text) {
@@ -158,12 +164,25 @@ export function installMarkdownMathPatch(
     hitLayouts.delete(this);
     const markdown = this as unknown as MarkdownInternals;
     const source = markdown.text;
+    if (installed && mode === "raw") {
+      const originalOptions = markdown.options;
+      markdown.options = { ...originalOptions, renderLatex: false };
+      // Pi's Markdown cache keys omit renderLatex. Invalidate on both sides so
+      // raw and normal output cannot leak into one another when modes change.
+      this.invalidate();
+      try {
+        return nestedRender.call(this, width);
+      } finally {
+        markdown.options = originalOptions;
+        this.invalidate();
+      }
+    }
     const protocol = getCapabilities().images;
     // Pi marks its transient reasoning component with a whole-block italic style.
     // Rasterizing it on every token floods Kitty and leaves no durable output to preserve.
     const isTransientReasoning = markdown.defaultTextStyle?.italic === true;
     if (
-      !enabled ||
+      mode !== "on" ||
       !protocol ||
       typeof source !== "string" ||
       isTransientReasoning ||
@@ -255,9 +274,14 @@ export function installMarkdownMathPatch(
   Markdown.prototype.render = patchedRender;
   if (onFormulaClick) mousePrototype.handleMouse = patchedMouse;
   return {
-    isEnabled: () => enabled,
+    getMode: () => mode,
+    setMode(value: MathRenderMode) {
+      mode = value;
+      hitLayouts = new WeakMap();
+    },
+    isEnabled: () => mode === "on",
     setEnabled(value: boolean) {
-      enabled = value;
+      mode = value ? "on" : "off";
       hitLayouts = new WeakMap();
     },
     clearTransformCache() {
@@ -272,7 +296,7 @@ export function installMarkdownMathPatch(
       Markdown.prototype.render = patchedRender;
     },
     uninstall() {
-      enabled = false;
+      mode = "off";
       hitLayouts = new WeakMap();
       if (mousePrototype.handleMouse === patchedMouse) {
         if (originalMouseDescriptor) Object.defineProperty(mousePrototype, "handleMouse", originalMouseDescriptor);

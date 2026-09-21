@@ -52,7 +52,7 @@ export default async function piMathExtension(pi: ExtensionAPI): Promise<void> {
   });
 
   pi.registerCommand("math-render", {
-    description: "Control terminal LaTeX image rendering: on, off, status, or clear",
+    description: "Control terminal LaTeX rendering: on, off, raw, status, or clear",
     handler: async (args, ctx) => {
       const action = args.trim().toLowerCase() || "status";
       if (!patch || !renderer) {
@@ -69,6 +69,12 @@ export default async function piMathExtension(pi: ExtensionAPI): Promise<void> {
         ctx.ui.notify("pi-math disabled", "info");
         return;
       }
+      if (action === "raw") {
+        patch.setMode("raw");
+        patch.rearm();
+        ctx.ui.notify("pi-math showing raw LaTeX", "info");
+        return;
+      }
       if (action === "clear") {
         renderer.clear();
         patch.clearTransformCache();
@@ -76,7 +82,8 @@ export default async function piMathExtension(pi: ExtensionAPI): Promise<void> {
         return;
       }
       if (action === "status") {
-        const status = patch.isEnabled() ? "enabled" : "disabled";
+        const status = patch.getMode() === "raw" ? "showing raw LaTeX"
+          : patch.isEnabled() ? "enabled" : "disabled";
         const protocol = getCapabilities().images ?? "unsupported terminal";
         const lastFailure = renderer.lastFailure ? `, last failure: ${renderer.lastFailure.code}` : "";
         ctx.ui.notify(
@@ -85,7 +92,7 @@ export default async function piMathExtension(pi: ExtensionAPI): Promise<void> {
         );
         return;
       }
-      ctx.ui.notify("Usage: /math-render on|off|status|clear", "warning");
+      ctx.ui.notify("Usage: /math-render on|off|raw|status|clear", "warning");
     },
   });
 }

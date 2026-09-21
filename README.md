@@ -98,7 +98,8 @@ In Pi’s fullscreen mode, click a formula to copy its LaTeX with Pi’s “Copi
 ```text
 /math-render status   Show protocol, raster count, cache bytes, and last failure
 /math-render on       Enable image rendering
-/math-render off      Disable image rendering
+/math-render off      Restore Pi's default rendering (including Unicode math)
+/math-render raw      Show literal LaTeX instead of images or Unicode math
 /math-render clear    Clear formula and Markdown transform caches
 ```
 

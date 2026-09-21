@@ -177,6 +177,33 @@ Second:
 
     const command = commands.get("math-render");
     assert.ok(command);
+    const rawSource = String.raw`Inline $x^2$ and \(y_1\).
+
+\[
+\frac{1}{2}
+\]`;
+    const rawMarkdown = new Markdown(rawSource, 0, 0, markdownTheme);
+    const originalOptions = (rawMarkdown as unknown as { options: unknown }).options;
+    rawMarkdown.render(80);
+    await command!("raw", context);
+    const rawRendered = rawMarkdown.render(80).join("\n");
+    assert.match(rawRendered, /\$x\^2\$/u);
+    assert.ok(rawRendered.includes(String.raw`\(y_1\)`));
+    assert.ok(rawRendered.includes(String.raw`\frac{1}{2}`));
+    assert.ok(rawRendered.includes(String.raw`\[`));
+    assert.doesNotMatch(rawRendered, /\x1b_G/u);
+    assert.equal((rawMarkdown as unknown as { text: string }).text, rawSource);
+    assert.equal((rawMarkdown as unknown as { options: unknown }).options, originalOptions);
+    assert.equal(rawMarkdown.render(80).join("\n"), rawRendered);
+    await command!("status", context);
+    assert.ok(notifications.some((message) => message.includes("showing raw LaTeX")));
+    setCapabilities({ images: null, trueColor: true, hyperlinks: true });
+    assert.equal(rawMarkdown.render(80).join("\n"), rawRendered);
+    setCapabilities({ images: "kitty", trueColor: true, hyperlinks: true });
+    await command!("off", context);
+    assert.notEqual(rawMarkdown.render(80).join("\n"), rawRendered);
+    await command!("on", context);
+    assert.equal(kittyImageCount(rawMarkdown.render(80)), 3);
     await command!("off", context);
     const disabledSource = String.raw`$\frac{1}{2}$`;
     // With the patch off, pi-math never rasterizes; pi-tui may prettify simple
