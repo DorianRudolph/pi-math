@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getCapabilities } from "@earendil-works/pi-tui";
 import { loadSvgMathRendererOptions } from "./config.js";
+import { installFullscreenMathCopy } from "./fullscreen-copy.js";
 import { installMarkdownMathPatch } from "./markdown-patch.js";
 import { createTerminalMathRenderer, type TerminalMathRenderer } from "./renderer.js";
 
@@ -23,7 +24,8 @@ export default async function piMathExtension(pi: ExtensionAPI): Promise<void> {
     loadFailure = errorMessage(error);
   }
 
-  const patch = renderer ? installMarkdownMathPatch(renderer) : undefined;
+  const fullscreenCopy = renderer ? installFullscreenMathCopy() : undefined;
+  const patch = renderer ? installMarkdownMathPatch(renderer, (source) => fullscreenCopy?.copy(source)) : undefined;
 
   pi.on("session_start", (_event, ctx) => {
     // pi-streaming-guard replaces Markdown.render wholesale on session_start,
@@ -44,6 +46,7 @@ export default async function piMathExtension(pi: ExtensionAPI): Promise<void> {
 
   pi.on("session_shutdown", () => {
     patch?.uninstall();
+    fullscreenCopy?.uninstall();
   });
 
   pi.registerCommand("math-render", {

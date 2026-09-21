@@ -10,6 +10,17 @@ export interface FormulaImagePlacement {
   fallbackText: string;
 }
 
+/** Cell bounds relative to the final Markdown output, excluding surrounding prose. */
+export interface FormulaHitRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  source: string;
+  /** Prose row relative to this rectangle; absent for display math. */
+  inlineBaseline?: number;
+}
+
 export interface FormulaImageArea {
   renderWidth: number;
   paddingX: number;
@@ -91,7 +102,7 @@ function isReusableBlank(line: string): boolean {
 function renderInlineBand(
   line: string,
   placements: FormulaImagePlacement[],
-): { lines: string[]; above: number; below: number } | undefined {
+): { lines: string[]; above: number; below: number; regions: FormulaHitRegion[] } | undefined {
   const present = placements
     .map((placement) => ({ placement, index: line.indexOf(placement.marker) }))
     .filter(({ index }) => index >= 0)
@@ -134,7 +145,15 @@ function renderInlineBand(
     if (row === above) output += line.slice(endIndex);
     return output;
   });
-  return { lines, above, below };
+  const regions = prepared.map(({ placement, column }) => ({
+    x: column,
+    y: above - Math.ceil((placement.raster.rows - 1) / 2),
+    width: placement.raster.columns,
+    height: placement.raster.rows,
+    source: placement.fallbackText,
+    inlineBaseline: Math.ceil((placement.raster.rows - 1) / 2),
+  }));
+  return { lines, above, below, regions };
 }
 
 /** Replace generated Markdown markers with terminal-native image placements. */
@@ -142,6 +161,7 @@ export function insertFormulaImages(
   lines: string[],
   placements: FormulaImagePlacement[],
   area: FormulaImageArea,
+  hitRegions?: FormulaHitRegion[],
 ): string[] {
   if (placements.length === 0) return lines;
   const output: string[] = [];
@@ -163,6 +183,16 @@ export function insertFormulaImages(
       // flush against text or another formula. Consecutive formula blocks
       // share the boundary row instead of doubling it.
       output.push("");
+      if (imageLines) {
+        const contentWidth = Math.max(1, area.renderWidth - area.paddingX * 2);
+        hitRegions?.push({
+          x: area.paddingX + Math.max(0, Math.floor((contentWidth - block.raster.columns) / 2)),
+          y: output.length,
+          width: block.raster.columns,
+          height: imageLines.length,
+          source: block.fallbackText,
+        });
+      }
       output.push(...blockLines);
       const nextIsBlock = blockPlacements.some(({ marker }) =>
         lines[lineIndex + 1]?.includes(marker),
@@ -180,6 +210,9 @@ export function insertFormulaImages(
         if (next === undefined || !isReusableBlank(next)) break;
         lineIndex++;
       }
+      for (const region of band.regions) {
+        hitRegions?.push({ ...region, y: output.length + region.y });
+      }
       output.push(...band.lines);
       trailingBlanks = 0;
       continue;
@@ -188,8 +221,18 @@ export function insertFormulaImages(
     let renderedLine = line;
     for (const placement of inlinePlacements) {
       if (!renderedLine.includes(placement.marker)) continue;
-      const image = renderInlinePlacement(placement) ?? placement.fallbackText;
-      renderedLine = renderedLine.replace(placement.marker, () => image);
+      const image = renderInlinePlacement(placement);
+      if (image) {
+        hitRegions?.push({
+          x: visibleWidth(line.slice(0, line.indexOf(placement.marker))),
+          y: output.length,
+          width: placement.raster.columns,
+          height: 1,
+          source: placement.fallbackText,
+          inlineBaseline: 0,
+        });
+      }
+      renderedLine = renderedLine.replace(placement.marker, () => image ?? placement.fallbackText);
     }
     output.push(renderedLine);
     trailingBlanks = isReusableBlank(line) ? trailingBlanks + 1 : 0;

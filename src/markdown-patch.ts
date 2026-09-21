@@ -4,9 +4,12 @@ import {
   getCapabilities,
   getCellDimensions,
   type DefaultTextStyle,
+  type Component,
+  type TuiMouseEvent,
 } from "@earendil-works/pi-tui";
 import { loadInlineMinScale } from "./config.js";
-import { insertFormulaImages, type FormulaImagePlacement } from "./image-layout.js";
+import { annotateFullscreenMath } from "./fullscreen-copy.js";
+import { insertFormulaImages, type FormulaImagePlacement, type FormulaHitRegion } from "./image-layout.js";
 import type { TerminalMathRenderer } from "./renderer.js";
 import { resolveFormulaColor } from "./text-color.js";
 import {
@@ -102,7 +105,10 @@ function matchingLineage(
  * The source Markdown is restored before render() returns, so session history
  * and provider context always retain the original LaTeX.
  */
-export function installMarkdownMathPatch(renderer: TerminalMathRenderer): MathPatchController {
+export function installMarkdownMathPatch(
+  renderer: TerminalMathRenderer,
+  onFormulaClick?: (source: string) => void,
+): MathPatchController {
   const baseRender = Markdown.prototype.render;
   let nestedRender: MarkdownRender = baseRender;
   let enabled = true;
@@ -110,11 +116,34 @@ export function installMarkdownMathPatch(renderer: TerminalMathRenderer): MathPa
   let transformCache = new WeakMap<Markdown, CachedTransform>();
   let transformLineages: TransformLineage[] = [];
   let lineageUsage = 0;
+  let hitLayouts = new WeakMap<Markdown, { source: string; width: number; regions: FormulaHitRegion[] }>();
+  const mousePrototype = Markdown.prototype as Markdown & Pick<Component, "handleMouse">;
+  const originalMouseDescriptor = Object.getOwnPropertyDescriptor(mousePrototype, "handleMouse");
+  const baseMouse = mousePrototype.handleMouse;
+
+  // Pi dispatches component mouse events only in fullscreen mode. Do not enable
+  // terminal mouse tracking or intercept raw input: regular mode stays untouched.
+  const patchedMouse = function (this: Markdown, event: TuiMouseEvent) {
+    const layout = hitLayouts.get(this);
+    if (installed && enabled && onFormulaClick && event.type === "click" &&
+        event.button === "left" && !event.shift && !event.alt && !event.ctrl &&
+        layout?.width === event.width &&
+        layout.source === (this as unknown as MarkdownInternals).text) {
+      const hit = layout.regions.find(({ x, y, width, height }) =>
+        event.x >= x && event.x < x + width && event.y >= y && event.y < y + height);
+      if (hit) {
+        onFormulaClick(hit.source);
+        return { handled: true, render: false };
+      }
+    }
+    return baseMouse?.call(this, event);
+  };
 
   // One stable function identity delegates through a mutable target so rearm()
   // can re-layer the wrapper over renders installed later without growing the
   // call chain — and so disabled/uninstalled wrappers degrade to pass-through.
   const patchedRender: MarkdownRender = function (width: number): string[] {
+    hitLayouts.delete(this);
     const markdown = this as unknown as MarkdownInternals;
     const source = markdown.text;
     const protocol = getCapabilities().images;
@@ -202,19 +231,26 @@ export function installMarkdownMathPatch(renderer: TerminalMathRenderer): MathPa
     markdown.text = transformed;
     try {
       const textLines = stripGeneratedMathFenceLines(nestedRender.call(this, width));
-      return insertFormulaImages(textLines, placements, { renderWidth: width, paddingX });
+      const regions: FormulaHitRegion[] = [];
+      const lines = insertFormulaImages(textLines, placements, { renderWidth: width, paddingX },
+        onFormulaClick ? regions : undefined);
+      if (onFormulaClick) hitLayouts.set(this, { source, width, regions });
+      return annotateFullscreenMath(this, lines, regions);
     } finally {
       markdown.text = source;
     }
   };
 
   Markdown.prototype.render = patchedRender;
+  if (onFormulaClick) mousePrototype.handleMouse = patchedMouse;
   return {
     isEnabled: () => enabled,
     setEnabled(value: boolean) {
       enabled = value;
+      hitLayouts = new WeakMap();
     },
     clearTransformCache() {
+      hitLayouts = new WeakMap();
       transformCache = new WeakMap();
       transformLineages = [];
       lineageUsage = 0;
@@ -226,6 +262,11 @@ export function installMarkdownMathPatch(renderer: TerminalMathRenderer): MathPa
     },
     uninstall() {
       enabled = false;
+      hitLayouts = new WeakMap();
+      if (mousePrototype.handleMouse === patchedMouse) {
+        if (originalMouseDescriptor) Object.defineProperty(mousePrototype, "handleMouse", originalMouseDescriptor);
+        else delete mousePrototype.handleMouse;
+      }
       transformCache = new WeakMap();
       transformLineages = [];
       lineageUsage = 0;

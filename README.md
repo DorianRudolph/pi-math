@@ -91,6 +91,8 @@ f(a)&=r.
 
 Ghostty and Kitty render embedded formulas as real one-row image cells, so prose, punctuation, and list items remain intact. Standalone and display formulas use centered image blocks. Other terminals use the safest protocol-specific behavior available; the Markdown source always remains unchanged.
 
+In Pi’s fullscreen mode, click a formula to copy its LaTeX with Pi’s “Copied!” popup. Text selections also include the original LaTeX: select any inline formula cell on its prose row, or any cell of a display formula.
+
 ## Commands
 
 ```text
@@ -121,17 +123,13 @@ Resizing the terminal creates a layout-specific render. A formula returns to the
 Configuration is read when the extension loads:
 
 ```text
-PI_MATH_MACROS          JSON object of MathJax configmacros definitions
-PI_MATH_ENVIRONMENTS    JSON object of MathJax custom environment definitions
-PI_MATH_FONT_FILES      Font files separated by the platform path delimiter
-PI_MATH_SYSTEM_FONTS    true/false; enabled by default for Unicode text fallback
-PI_MATH_COLOR           Explicit formula ink color as #rrggbb
-PI_MATH_INLINE_MIN_SCALE Minimum inline scale, 0–1 (default 0: fit one row)
+PI_MATH_MACROS              JSON object of MathJax configmacros definitions
+PI_MATH_ENVIRONMENTS        JSON object of MathJax custom environment definitions
+PI_MATH_FONT_FILES          Font files separated by the platform path delimiter
+PI_MATH_SYSTEM_FONTS        true/false; enabled by default for Unicode text fallback
+PI_MATH_COLOR               Explicit formula ink color as #rrggbb
+PI_MATH_INLINE_MIN_SCALE    minimum inline math scale, 0–1 (default 0: fit one row)
 ```
-
-`PI_MATH_INLINE_MIN_SCALE` limits vertical shrinking relative to the normal math size. `0` preserves the one-row behavior; `0.75` allows up to 25% shrinking; `1` disables vertical shrinking. When a formula cannot fit one row at that scale, its wrapped prose line reserves extra rows above/below, shared by all formulas on that line. Extra rows are balanced, with an odd extra row assigned above: two total rows use 1 above / 0 below, three use 1 / 1, and four use 2 / 1. Existing adjacent blank rows are reused first; rows already occupied by another formula are never claimed twice. Images use the required row count without rounding to odd counts. Multirow inline formulas are bottom-aligned inside their image with a small anti-clipping margin (not baseline-aligned); one-row and display formulas retain their existing centering. Width limits may still shrink formulas further. Invalid values fall back to `0`. Inline images require Kitty protocol support; Unicode placeholders are used where available.
-
-Compare `PI_MATH_INLINE_MIN_SCALE=0`, `0.75`, and `1` with `bun run visual -- inline-scale`; add `MATH_WIDTH=60` to exercise wrapping. This standalone fixture does not start a Pi session.
 
 Formula ink follows the surrounding Markdown text: the component's own default text color when present (for example, custom message text), otherwise the active Pi theme's `text` token. Pi's built-in dark and light themes therefore give matching formula colors in both modes, and custom themes with a concrete `text` token work the same way. Themes that leave `text` at the terminal default get a mode-appropriate neutral color; set `PI_MATH_COLOR` to pin an exact value. Pi's transient italic reasoning stream keeps source LaTeX instead of rasterizing formulas that are rebuilt on every token.
 
