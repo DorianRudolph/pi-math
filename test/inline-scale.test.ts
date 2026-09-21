@@ -39,9 +39,19 @@ test("adaptive raster preserves minimum scale, legacy mode, and width limits", a
   assert.equal(fraction.pixelsPerEx, centered.pixelsPerEx);
   assert.equal(fraction.heightPx, centered.heightPx);
   assert.ok(fraction.inkBounds.bottom > centered.inkBounds.bottom);
-  assert.ok(adaptive.pixelsPerEx >= 9 * 0.75);
+  assert.equal(adaptive.pixelsPerEx, 9);
   assert.equal(full.pixelsPerEx, 9);
-  assert.notEqual(adaptive.base64Data, full.base64Data);
+  assert.equal(adaptive.base64Data, full.base64Data);
+  // Below the measured one-row scale, keep the legacy compact raster. Just
+  // above it, reserve rows and return to full size instead of using the minimum.
+  const threshold = legacy.pixelsPerEx / 9;
+  const compact = renderer.render(formula, false, undefined, { ...layout, inlineMinScale: threshold - 0.01 });
+  const expanded = renderer.render(formula, false, undefined, { ...layout, inlineMinScale: threshold + 0.01 });
+  assert.ok(compact && expanded);
+  assert.equal(compact.rows, 1);
+  assert.equal(compact.base64Data, legacy.base64Data);
+  assert.equal(expanded.pixelsPerEx, 9);
+  assert.equal(expanded.base64Data, full.base64Data);
   const small = renderer.render("x", false, undefined, { ...layout, inlineMinScale: 0.75 });
   assert.equal(small?.rows, 1);
   const narrow = renderer.render(formula, false, undefined, { ...layout, maxWidthCells: 1, inlineMinScale: 1 });

@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getCapabilities } from "@earendil-works/pi-tui";
-import { loadSvgMathRendererOptions } from "./config.js";
+import { loadMathConfig, type MathConfig } from "./config.js";
 import { installFullscreenMathCopy } from "./fullscreen-copy.js";
 import { installMarkdownMathPatch } from "./markdown-patch.js";
 import { createTerminalMathRenderer, type TerminalMathRenderer } from "./renderer.js";
@@ -18,14 +18,16 @@ function formatBytes(bytes: number): string {
 export default async function piMathExtension(pi: ExtensionAPI): Promise<void> {
   let renderer: TerminalMathRenderer | undefined;
   let loadFailure: string | undefined;
+  let config: MathConfig | undefined;
   try {
-    renderer = await createTerminalMathRenderer(loadSvgMathRendererOptions());
+    config = loadMathConfig();
+    renderer = await createTerminalMathRenderer(config);
   } catch (error) {
     loadFailure = errorMessage(error);
   }
 
   const fullscreenCopy = renderer ? installFullscreenMathCopy() : undefined;
-  const patch = renderer ? installMarkdownMathPatch(renderer, (source) => fullscreenCopy?.copy(source)) : undefined;
+  const patch = renderer ? installMarkdownMathPatch(renderer, (source) => fullscreenCopy?.copy(source), config) : undefined;
 
   pi.on("session_start", (_event, ctx) => {
     // pi-streaming-guard replaces Markdown.render wholesale on session_start,

@@ -3,6 +3,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getMarkdownTheme, initTheme } from "@earendil-works/pi-coding-agent";
 import { Markdown } from "@earendil-works/pi-tui";
 import piMathExtension from "../src/index.js";
+import { loadMathConfig } from "../src/config.js";
 
 const theoryLatex = readFileSync(new URL("./fixtures/field-theory.tex", import.meta.url), "utf8");
 
@@ -162,7 +163,7 @@ await piMathExtension(mockPi);
 const requestedWidth = process.env.MATH_WIDTH ?? String(process.stdout.columns ?? 100);
 const width = Number.parseInt(requestedWidth, 10);
 const label = fixtureName === "inline-scale"
-  ? `PI_MATH_INLINE_MIN_SCALE=${process.env.PI_MATH_INLINE_MIN_SCALE ?? "0 (default)"}\n\n`
+  ? `inlineMinScale=${loadMathConfig().inlineMinScale}\n\n`
   : "";
 const markdown = new Markdown(label + source, 1, 0, getMarkdownTheme());
 const lines = markdown.render(Number.isFinite(width) ? width : 100);

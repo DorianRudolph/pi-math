@@ -35,7 +35,7 @@ export interface FormulaRasterLayout {
   cellWidthPx: number;
   cellHeightPx: number;
   fitHeight?: boolean;
-  /** Fit one row, but reserve extra rows rather than shrink below this scale. */
+  /** Fit one row above this threshold; otherwise use full size and reserve extra rows. */
   inlineMinScale?: number;
 }
 
@@ -348,11 +348,10 @@ export async function createSvgMathRenderer(
         }
 
         const widthPixelsPerEx = innerWidth / svg.widthEx;
+        const oneRowPixelsPerEx = (layout.cellHeightPx - contentBleedPx * 2) / svg.heightEx;
         const heightPixelsPerEx = layout.inlineMinScale > 0
-          ? Math.max(
-              (layout.cellHeightPx - contentBleedPx * 2) / svg.heightEx,
-              basePixelsPerEx * layout.inlineMinScale,
-            )
+          ? (oneRowPixelsPerEx >= basePixelsPerEx * layout.inlineMinScale
+              ? oneRowPixelsPerEx : Number.POSITIVE_INFINITY)
           : layout.fitHeight ? innerHeight / svg.heightEx : Number.POSITIVE_INFINITY;
         const pixelsPerEx = Math.min(
           basePixelsPerEx,

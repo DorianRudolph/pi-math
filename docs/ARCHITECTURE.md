@@ -28,7 +28,7 @@ source Markdown
 | Module | Responsibility |
 | --- | --- |
 | `src/index.ts` | Extension initialization, lifecycle hooks, diagnostics, and `/math-render` commands |
-| `src/config.ts` | Cross-platform environment configuration for macros, environments, and fonts |
+| `src/config.ts` | Global JSON configuration and environment overrides |
 | `src/markdown-patch.ts` | Reversible `Markdown.render()` integration and per-component transform caching |
 | `src/text-color.ts` | Formula ink color from Pi's active theme `text` token, component default styles, or `PI_MATH_COLOR` |
 | `src/transform.ts` | Comment-aware LaTeX delimiter/environment scanning while excluding Markdown, HTML code, and TeX verbatim commands |
@@ -136,7 +136,7 @@ Parser limits are explicit:
 - MathJax internal buffer: 20,000 characters; and
 - macro/environment substitutions: 1,000 per formula.
 
-`configmacros` definitions can be supplied through `PI_MATH_MACROS` and `PI_MATH_ENVIRONMENTS`. Labels are removed because formulas are isolated render units; explicit `\tag` values are rewritten as visible local annotations instead of triggering MathJax's full-width equation table output.
+`configmacros` definitions can be supplied through `macros` and `environments` in `pi-math.json`, or the `PI_MATH_MACROS` and `PI_MATH_ENVIRONMENTS` overrides. Labels are removed because formulas are isolated render units; explicit `\tag` values are rewritten as visible local annotations instead of triggering MathJax's full-width equation table output.
 
 MathJax math glyphs are SVG paths. When MathJax emits external `<text>` for Unicode or CJK content, Resvg loads either explicitly configured font files or its cross-platform system-font database. Ordinary path-only formulas do not pay the system-font discovery cost.
 
@@ -154,6 +154,8 @@ The Markdown patch uses a `WeakMap` keyed by each `Markdown` component. It store
 `/math-render clear` clears both renderer caches, the component transform cache, and streaming lineages. `session_shutdown` removes the prototype patch. Pi's differential renderer deletes Kitty images whose IDs disappear from rendered lines.
 
 ## Initialization and runtime
+
+Configuration is read from `pi-math.json` in Pi's agent directory when the extension loads, with environment overrides applied last. There are no project overrides. Missing files use defaults; invalid file settings fail initialization with a diagnostic. `/reload` reloads settings. Inline sizing and explicit ink color use that config snapshot; theme-derived colors remain dynamic.
 
 MathJax is initialized once when Pi loads the extension. Formula conversion and Resvg rasterization are synchronous after the asynchronous extension initialization step.
 

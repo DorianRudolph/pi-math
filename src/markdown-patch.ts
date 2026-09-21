@@ -60,8 +60,16 @@ export interface MathPatchController {
   uninstall(): void;
 }
 
-function formulaColor(markdown: MarkdownInternals): string {
-  return resolveFormulaColor({ sampleStyle: markdown.defaultTextStyle?.color });
+export interface MathDisplayOptions {
+  inlineMinScale: number;
+  color?: string;
+}
+
+function formulaColor(markdown: MarkdownInternals, color: string | undefined): string {
+  return resolveFormulaColor({
+    sampleStyle: markdown.defaultTextStyle?.color,
+    environment: { PI_MATH_COLOR: color },
+  });
 }
 
 function imageMarker(
@@ -108,7 +116,11 @@ function matchingLineage(
 export function installMarkdownMathPatch(
   renderer: TerminalMathRenderer,
   onFormulaClick?: (source: string) => void,
+  options: MathDisplayOptions = {
+    inlineMinScale: loadInlineMinScale(), color: process.env.PI_MATH_COLOR,
+  },
 ): MathPatchController {
+  const { inlineMinScale, color: configuredColor } = options;
   const baseRender = Markdown.prototype.render;
   let nestedRender: MarkdownRender = baseRender;
   let enabled = true;
@@ -164,10 +176,9 @@ export function installMarkdownMathPatch(
       typeof markdown.paddingX === "number" && Number.isFinite(markdown.paddingX)
         ? Math.max(0, markdown.paddingX)
         : 0;
-    const color = formulaColor(markdown);
+    const color = formulaColor(markdown, configuredColor);
     const cells = getCellDimensions();
     const contentWidth = Math.max(1, width - paddingX * 2);
-    const inlineMinScale = loadInlineMinScale();
     const layoutKey = `${width}:${paddingX}:${color}:${protocol}:${cells.widthPx}:${cells.heightPx}:${inlineMinScale}`;
     const maxBlockRows = Math.max(1, Math.floor(MAX_RASTER_HEIGHT_PX / cells.heightPx));
 
