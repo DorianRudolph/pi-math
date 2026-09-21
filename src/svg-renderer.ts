@@ -27,6 +27,7 @@ export interface SvgMathRendererOptions {
   environments?: TeXDefinitionMap;
   fontFiles?: string[];
   loadSystemFonts?: boolean;
+  renderUnknownCommands?: boolean;
 }
 
 export interface FormulaRasterLayout {
@@ -219,7 +220,8 @@ export async function createSvgMathRenderer(
     unknownCharHeight: 0.8,
   });
   SafeHandler(RegisterHTMLHandler(adaptor));
-  const disabledPackages = new Set(["html", "noerrors", "noundefined"]);
+  const disabledPackages = new Set(["html", "noerrors"]);
+  if (!options.renderUnknownCommands) disabledPackages.add("noundefined");
   const packages = AllPackages.filter((name) => !disabledPackages.has(name));
   const input = new TeX({
     packages,
@@ -227,6 +229,8 @@ export async function createSvgMathRenderer(
     maxMacros: 1_000,
     macros: options.macros ?? {},
     environments: options.environments ?? {},
+    // Keep unknown command names visible in the surrounding formula's color.
+    ...(options.renderUnknownCommands ? { noundefined: { color: "" } } : {}),
     tags: "none",
     formatError: (_jax: unknown, error: Error) => {
       throw error;

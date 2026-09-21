@@ -128,7 +128,7 @@ Display and standalone formulas are centered inside the Markdown content width a
 
 ## MathJax safety and compatibility
 
-MathJax loads its local package configurations once. `html`, `noerrors`, and `noundefined` are excluded. SafeHandler rejects URLs and arbitrary styles while allowing constrained equation IDs.
+MathJax loads its local package configurations once. `html` and `noerrors` are excluded. `noundefined` is enabled only with `renderUnknownCommands`, displaying undefined command names in the formula's ink color without suppressing other TeX errors. SafeHandler rejects URLs and arbitrary styles while allowing constrained equation IDs.
 
 Parser limits are explicit:
 

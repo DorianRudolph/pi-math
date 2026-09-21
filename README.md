@@ -134,6 +134,7 @@ Create `~/.pi/agent/pi-math.json` (or `pi-math.json` in your custom Pi agent dir
 | `inlineMinScale` | `0` | Minimum one-row scale, 0–1; otherwise uses full size with extra rows (width permitting) |
 | `color` | Theme color | Formula ink as `#rrggbb` |
 | `macros` | `{}` | MathJax macro definitions |
+| `renderUnknownCommands` | `false` | Show unknown command names literally instead of rejecting the formula |
 | `environments` | `{}` | MathJax environment definitions |
 | `systemFonts` | `true` | Discover system fonts for Unicode text |
 | `fontFiles` | `[]` | Font paths, relative to the config file; `~/` is supported |
@@ -149,9 +150,12 @@ PI_MATH_FONT_FILES          Font files separated by the platform path delimiter
 PI_MATH_SYSTEM_FONTS        true/false; enabled by default for Unicode text fallback
 PI_MATH_COLOR               Explicit formula ink color as #rrggbb
 PI_MATH_INLINE_MIN_SCALE    minimum inline math scale, 0–1 (default 0: fit one row)
+PI_MATH_RENDER_UNKNOWN_COMMANDS  true/false; show undefined commands (default false)
 ```
 
 Formula ink follows the surrounding Markdown text: the component's own default text color when present (for example, custom message text), otherwise the active Pi theme's `text` token. Pi's built-in dark and light themes therefore give matching formula colors in both modes, and custom themes with a concrete `text` token work the same way. Themes that leave `text` at the terminal default get a mode-appropriate neutral color; set `color` to pin an exact value. Pi's transient italic reasoning stream keeps source LaTeX instead of rasterizing formulas that are rebuilt on every token.
+
+`renderUnknownCommands` enables MathJax's `noundefined` extension. It displays missing macro names, but does not infer their definitions or support unknown environments. Other LaTeX errors still fall back to source text.
 
 Macro names may be written with or without the leading backslash. Explicit font files are validated before renderer initialization. System font discovery is performed in-process by Resvg and contains no platform-specific hardcoded paths. Reload Pi after changing settings.
 

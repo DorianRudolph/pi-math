@@ -57,6 +57,7 @@ export function loadSvgMathRendererOptions(
   });
   const fonts = environment.PI_MATH_FONT_FILES?.trim();
   const systemFonts = environment.PI_MATH_SYSTEM_FONTS;
+  const unknownCommands = environment.PI_MATH_RENDER_UNKNOWN_COMMANDS;
   return {
     macros: definitions("macros", "PI_MATH_MACROS"),
     environments: definitions("environments", "PI_MATH_ENVIRONMENTS"),
@@ -65,6 +66,8 @@ export function loadSvgMathRendererOptions(
       : defaults.fontFiles,
     loadSystemFonts: systemFonts === undefined ? defaults.loadSystemFonts ?? true
       : systemFonts !== "0" && systemFonts.toLowerCase() !== "false",
+    renderUnknownCommands: unknownCommands === undefined ? defaults.renderUnknownCommands ?? false
+      : unknownCommands !== "0" && unknownCommands.toLowerCase() !== "false",
   };
 }
 
@@ -84,7 +87,7 @@ export function loadMathConfig(
   }
   const file = value as Record<string, unknown>;
   for (const key of Object.keys(file)) {
-    if (!["inlineMinScale", "color", "macros", "environments", "systemFonts", "fontFiles"].includes(key)) {
+    if (!["inlineMinScale", "color", "macros", "environments", "systemFonts", "fontFiles", "renderUnknownCommands"].includes(key)) {
       throw new Error(`${path}: unknown option ${key}`);
     }
   }
@@ -92,8 +95,10 @@ export function loadMathConfig(
   if (typeof scale !== "number" || !Number.isFinite(scale) || scale < 0 || scale > 1) {
     throw new Error(`${path}: inlineMinScale must be a number between 0 and 1`);
   }
-  if (file.systemFonts !== undefined && typeof file.systemFonts !== "boolean") {
-    throw new Error(`${path}: systemFonts must be a boolean`);
+  for (const key of ["systemFonts", "renderUnknownCommands"]) {
+    if (file[key] !== undefined && typeof file[key] !== "boolean") {
+      throw new Error(`${path}: ${key} must be a boolean`);
+    }
   }
   if (file.color !== undefined && (typeof file.color !== "string" || !/^#[\da-f]{6}$/i.test(file.color))) {
     throw new Error(`${path}: color must be in #rrggbb format`);
@@ -104,6 +109,7 @@ export function loadMathConfig(
       environments: definitionMap(file.environments, `${path}: environments`),
       fontFiles: fontFiles(file.fontFiles, agentDir, `${path}: fontFiles`),
       loadSystemFonts: file.systemFonts as boolean | undefined,
+      renderUnknownCommands: file.renderUnknownCommands as boolean | undefined,
     }),
     inlineMinScale: environment.PI_MATH_INLINE_MIN_SCALE === undefined ? scale : loadInlineMinScale(environment),
     color: environment.PI_MATH_COLOR ?? (file.color as string | undefined),

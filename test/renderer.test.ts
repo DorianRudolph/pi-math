@@ -176,6 +176,33 @@ test("rejects invalid LaTeX with structured diagnostics", async () => {
   assert.equal(renderer.lastFailure?.code, "tex-error");
 });
 
+test("optionally renders unknown command names without hiding other TeX errors", async () => {
+  const renderer = await createTerminalMathRenderer({ renderUnknownCommands: true });
+  const source = String.raw`\paperMacro{x}+\frac{1}{\missingConstant}`;
+  const result = renderer.render(source, true, "#ffffff", layout);
+  assert.ok(result, renderer.lastFailure?.message);
+  assert.ok(isPng(result.base64Data));
+  assertTransparentBleed(result);
+  assert.equal(renderer.render(source, true, "#ffffff", layout), result);
+  const inline = renderer.render(source, false, "#ffffff", layout);
+  assert.ok(inline, renderer.lastFailure?.message);
+
+  const configured = await createTerminalMathRenderer({
+    renderUnknownCommands: true, macros: { paperMacro: [String.raw`\mathbf{#1}`, 1] },
+  });
+  const defined = configured.render(source, true, "#ffffff", layout);
+  assert.ok(defined);
+  assert.notEqual(defined.base64Data, result.base64Data);
+
+  assert.equal(renderer.render(String.raw`\frac{x}{`, true, "#ffffff", layout), undefined);
+  assert.equal(renderer.lastFailure?.code, "tex-error");
+  assert.equal(renderer.render(String.raw`\begin{unknownEnvironment}x\end{unknownEnvironment}`, true, "#ffffff", layout), undefined);
+  assert.equal(renderer.lastFailure?.code, "tex-error");
+  const strict = await createTerminalMathRenderer();
+  assert.equal(strict.render(source, true, "#ffffff", layout), undefined);
+  assert.equal(strict.lastFailure?.code, "tex-error");
+});
+
 test("rasterizes the deeply nested regression without clipping", async () => {
   const renderer = await createTerminalMathRenderer();
   const source = readFileSync(new URL("./fixtures/field-theory.tex", import.meta.url), "utf8");
