@@ -2,7 +2,7 @@
 
 Render LaTeX in the Pi TUI as real, transparent terminal images.
 
-pi-math uses MathJax for mathematical typesetting and Resvg for rasterization. It does not approximate formulas with Unicode glyphs or hand-built character geometry.
+pi-math uses MathJax 4 for mathematical typesetting and Resvg for rasterization. It does not approximate formulas with Unicode glyphs or hand-built character geometry.
 
 ![Long-form English mathematics with inline and display MathJax rendered in Ghostty through Pi Markdown](docs/images/pi-math-showcase.png)
 
@@ -107,7 +107,7 @@ Rendering is enabled by default.
 
 ## Sizing behavior
 
-Every formula starts at the same base scale: `0.50 × terminal cell height` pixels per MathJax `ex`.
+Every formula starts at `baseScale × terminal cell height` pixels per MathJax `ex` (`baseScale` defaults to `0.5`).
 
 - Formulas that fit use that scale unchanged.
 - Formulas are never enlarged to fill available space.
@@ -115,7 +115,7 @@ Every formula starts at the same base scale: `0.50 × terminal cell height` pixe
 - Width and height always use the same scale, preserving the complete formula's aspect ratio.
 - The raster is padded, not stretched, to an exact integer number of terminal cells.
 - Embedded inline formulas are proportionally contained in one terminal row so they can share a line with text.
-- Small rasters use 2× device density; exceptionally large terminal canvases fall back to 1× instead of failing.
+- Rasters use `rasterScale` pixel density (2× by default); exceptionally large terminal canvases fall back to 1× instead of failing.
 
 Resizing the terminal creates a layout-specific render. A formula returns to the base scale whenever the wider content area can contain it.
 
@@ -133,6 +133,9 @@ Create `~/.pi/agent/pi-math.json` (or `pi-math.json` in your custom Pi agent dir
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `inlineMinScale` | `0` | Minimum one-row scale, 0–1; otherwise uses full size with extra rows (width permitting) |
+| `font` | `"newcm"` | Math font: `newcm`, `tex`, `stix2`, `fira`, or `dejavu` |
+| `rasterScale` | `2` | PNG pixel density: `1` or `2`; terminal size stays the same |
+| `baseScale` | `0.5` | Positive multiplier of cell height for pixels per MathJax `ex`; larger means larger math |
 | `color` | Theme color | Formula ink as `#rrggbb` |
 | `macros` | `{}` | MathJax macro definitions |
 | `renderUnknownCommands` | `false` | Show unknown command names literally instead of rejecting the formula |
@@ -140,11 +143,16 @@ Create `~/.pi/agent/pi-math.json` (or `pi-math.json` in your custom Pi agent dir
 | `systemFonts` | `true` | Discover system fonts for Unicode text |
 | `fontFiles` | `[]` | Font paths, relative to the config file; `~/` is supported |
 
+Fonts are bundled locally: New Computer Modern (`newcm`), original MathJax TeX (`tex`), STIX Two (`stix2`), Fira Math (`fira`), and DejaVu (`dejavu`). Set `"font": "fira"` to try a different style. `fontFiles` only controls fallback text fonts; arbitrary OTF math fonts cannot replace these MathJax font packages.
+
 Environment variables override the file; macro/environment maps merge by name and font arrays replace. Settings load with the extension; use `/reload` after changes. Invalid file settings report an error and leave math rendering disabled until corrected.
 
 Optional environment overrides (font paths here are relative to the working directory):
 
 ```text
+PI_MATH_FONT                Math font name (default newcm)
+PI_MATH_RASTER_SCALE        PNG pixel density: 1 or 2 (default 2)
+PI_MATH_BASE_SCALE          Math size relative to cell height (default 0.5)
 PI_MATH_MACROS              JSON object of MathJax configmacros definitions
 PI_MATH_ENVIRONMENTS        JSON object of MathJax custom environment definitions
 PI_MATH_FONT_FILES          Font files separated by the platform path delimiter
@@ -206,6 +214,7 @@ bun run visual -- complex
 bun run visual -- theory
 bun run visual -- inline
 PI_MATH_INLINE_MIN_SCALE=0.75 bun run visual -- inline-scale
+PI_MATH_FONT=fira bun run visual -- font
 ```
 
 Set `MATH_WIDTH` to exercise a specific Markdown width:
@@ -218,7 +227,7 @@ The automated suite covers MathJax rasterization, transparent ink bounds, fixed 
 
 ## Runtime dependencies
 
-- [MathJax 3](https://github.com/mathjax/MathJax-src) — TeX parsing and SVG layout, Apache-2.0
+- [MathJax 4](https://github.com/mathjax/MathJax-src) — TeX parsing and SVG layout, Apache-2.0
 - [Resvg JS](https://github.com/yisibl/resvg-js) — in-process SVG rasterization, MPL-2.0
 
 `@resvg/resvg-js` uses platform-specific native packages. Installation must include the matching optional dependency for the target operating system and architecture.

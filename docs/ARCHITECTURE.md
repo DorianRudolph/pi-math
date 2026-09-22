@@ -34,6 +34,8 @@ source Markdown
 | `src/transform.ts` | Comment-aware LaTeX delimiter/environment scanning while excluding Markdown, HTML code, and TeX verbatim commands |
 | `src/renderer.ts` | Message-level normalization facade around the rasterizer |
 | `src/svg-renderer.ts` | Safe MathJax initialization, SVG extraction, sizing, alpha-bound checks, Resvg rasterization, and two-level caches |
+| `src/mathjax-fonts.ts` | Supported MathJax 4 font names and local font-class loading |
+| `src/mathjax-packages.ts` | Explicit registration of local TeX packages |
 | `src/lru-cache.ts` | Entry- and byte-bounded weighted LRU storage |
 | `src/image-layout.ts` | Protocol selection, display centering, row reservation, and inline placement |
 | `src/kitty-graphics.ts` | Kitty Unicode virtual placements, payload chunking, and cell placeholders |
@@ -53,10 +55,10 @@ Some extensions replace `Markdown.prototype.render` outright instead of chaining
 The natural display scale is:
 
 ```text
-basePixelsPerEx = terminalCellHeightPx × 0.50
+basePixelsPerEx = terminalCellHeightPx × baseScale  // default 0.5
 ```
 
-Formula complexity does not influence this value. Superscripts, limits, and other TeX style levels may be smaller because MathJax defines them relative to the same base style.
+`baseScale` is a positive finite number, independent of PNG pixel density (`rasterScale`). Formula complexity does not influence this value. Superscripts, limits, and other TeX style levels may be smaller because MathJax defines them relative to the same base style.
 
 ### Minimum proportional fitting
 
@@ -85,7 +87,7 @@ The same value is applied on both axes. Formulas are never independently stretch
 
 The SVG is centered in an integer-cell canvas with transparent safety bleed on every side. After rendering, the raw premultiplied RGBA buffer is scanned for exact half-open ink bounds. If visible alpha reaches an edge, the renderer progressively expands the bleed and rerasterizes, stopping at the first safe integer-cell canvas. This handles MathJax output whose advertised SVG box is narrower than its ink, such as left labels in amscd pullback diagrams, without padding ordinary formulas. A raster is rejected only if ink still reaches an edge at the bounded maximum, preventing clipped roots, fraction bars, boxes, accents, or long stroke miters.
 
-Small canvases use 2× device density. If 2× would exceed 4096 pixels but the logical cell canvas still fits, the renderer selects 1× rather than rejecting the formula. Display dimensions remain unchanged.
+The `rasterScale` setting selects 1× or 2× pixel density (default 2×). If 2× would exceed 4096 pixels but the logical cell canvas still fits, the renderer selects 1× rather than rejecting the formula. Display dimensions remain unchanged.
 
 ### Capability-first fallback
 
@@ -128,7 +130,7 @@ Display and standalone formulas are centered inside the Markdown content width a
 
 ## MathJax safety and compatibility
 
-MathJax loads its local package configurations once. `html` and `noerrors` are excluded. `noundefined` is enabled only with `renderUnknownCommands`, displaying undefined command names in the formula's ink color without suppressing other TeX errors. SafeHandler rejects URLs and arbitrary styles while allowing constrained equation IDs.
+MathJax 4 loads explicitly listed local package configurations once; runtime `autoload`/`require` and HTML packages are not enabled. `html` and `noerrors` are excluded. `noundefined` is enabled only with `renderUnknownCommands`, displaying undefined command names in the formula's ink color without suppressing other TeX errors. SafeHandler rejects URLs and arbitrary styles while allowing constrained equation IDs.
 
 Parser limits are explicit:
 
@@ -138,7 +140,7 @@ Parser limits are explicit:
 
 `configmacros` definitions can be supplied through `macros` and `environments` in `pi-math.json`, or the `PI_MATH_MACROS` and `PI_MATH_ENVIRONMENTS` overrides. Labels are removed because formulas are isolated render units; explicit `\tag` values are rewritten as visible local annotations instead of triggering MathJax's full-width equation table output.
 
-MathJax math glyphs are SVG paths. When MathJax emits external `<text>` for Unicode or CJK content, Resvg loads either explicitly configured font files or its cross-platform system-font database. Ordinary path-only formulas do not pay the system-font discovery cost.
+MathJax math glyphs are SVG paths from the configured font (`newcm` by default). The selected font's dynamic glyph ranges are preloaded from installed packages during initialization, keeping subsequent rendering synchronous and offline. Explicit CommonJS module paths keep core and font instances consistent under both Node and Pi's extension loader. Inline MathJax line breaking is disabled so each formula produces one SVG; Pi wraps the formula markers. When MathJax emits external `<text>` for Unicode or CJK content, Resvg loads either explicitly configured font files or its cross-platform system-font database. Ordinary path-only formulas do not pay the system-font discovery cost.
 
 ## Caches and lifecycle
 
@@ -157,7 +159,7 @@ The Markdown patch uses a `WeakMap` keyed by each `Markdown` component. It store
 
 Configuration is read from `pi-math.json` in Pi's agent directory when the extension loads, with environment overrides applied last. There are no project overrides. Missing files use defaults; invalid file settings fail initialization with a diagnostic. `/reload` reloads settings. Inline sizing and explicit ink color use that config snapshot; theme-derived colors remain dynamic.
 
-MathJax is initialized once when Pi loads the extension. Formula conversion and Resvg rasterization are synchronous after the asynchronous extension initialization step.
+MathJax and the selected font are initialized once when Pi loads the extension. Formula conversion and Resvg rasterization are synchronous after the asynchronous extension initialization step.
 
 pi-math itself performs no HTTP requests and launches no child processes. MathJax data, native Resvg code, optional font files, and Kitty's diacritic table are all local.
 

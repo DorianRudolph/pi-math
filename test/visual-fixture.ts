@@ -8,6 +8,24 @@ import { loadMathConfig } from "../src/config.js";
 const theoryLatex = readFileSync(new URL("./fixtures/field-theory.tex", import.meta.url), "utf8");
 
 const fixtures: Record<string, string> = {
+  font: String.raw`## Math font and thin-stroke comparison
+
+Inline: $x^2+y_i$, $\frac{a+b}{c+d}$, and $\int_a^b f(x)\,dx$ beside ordinary text.
+
+\[
+X_{uv}=|u\rangle\langle v|+|v\rangle\langle u|,\qquad
+Y_{uv}=-i\bigl(|u\rangle\langle v|-|v\rangle\langle u|\bigr).
+\]
+
+\[
+x=\frac{-b\pm\sqrt{b^2-4ac}}{2a},\qquad
+e^x=\sum_{n=0}^{\infty}\frac{x^n}{n!}.
+\]
+
+\[
+\mathbb{R}\quad\mathcal{F}\quad\mathfrak{g}\quad\boldsymbol{\alpha}\quad
+\left(\begin{matrix}a&b\\c&d\end{matrix}\right)
+\]`,
   aligned: String.raw`## Embedded boxed result
 
 \[
@@ -164,7 +182,7 @@ const requestedWidth = process.env.MATH_WIDTH ?? String(process.stdout.columns ?
 const width = Number.parseInt(requestedWidth, 10);
 const label = fixtureName === "inline-scale"
   ? `inlineMinScale=${loadMathConfig().inlineMinScale}\n\n`
-  : "";
+  : fixtureName === "font" ? `font=${loadMathConfig().font}\n\n` : "";
 const markdown = new Markdown(label + source, 1, 0, getMarkdownTheme());
 const lines = markdown.render(Number.isFinite(width) ? width : 100);
 process.stdout.write(`\x1b[2J\x1b[H${lines.map((line) => line.trimEnd()).join("\n")}\x1b[0m\n`);

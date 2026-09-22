@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { createTerminalMathRenderer } from "../src/renderer.js";
 import type { FormulaRasterLayout } from "../src/svg-renderer.js";
+import { MATH_FONTS } from "../src/mathjax-fonts.js";
+import { mathjax } from "@mathjax/src/cjs/mathjax.js";
 
 const layout: FormulaRasterLayout = {
   maxWidthCells: 120,
@@ -39,6 +41,52 @@ test("rasterizes LaTeX through MathJax SVG", async () => {
   assert.equal(result.pixelsPerEx, layout.cellHeightPx * 0.5);
   assert.equal(result.deviceScale, 2);
   assertTransparentBleed(result);
+});
+
+test("raster scale changes PNG resolution without changing terminal size", async () => {
+  const low = await createTerminalMathRenderer({ rasterScale: 1 });
+  const high = await createTerminalMathRenderer({ rasterScale: 2 });
+  for (const display of [false, true]) {
+    const formula = String.raw`\frac{x^2+1}{y}`;
+    const first = low.render(formula, display, "#ffffff", layout);
+    const second = high.render(formula, display, "#ffffff", layout);
+    assert.ok(first && second);
+    assert.equal(first.deviceScale, 1);
+    assert.equal(second.deviceScale, 2);
+    assert.equal(first.rows, second.rows);
+    assert.equal(first.columns, second.columns);
+    assert.equal(first.pixelsPerEx, second.pixelsPerEx);
+    assert.equal(first.widthPx * 2, second.widthPx);
+    assert.equal(first.heightPx * 2, second.heightPx);
+    assertTransparentBleed(first);
+    assertTransparentBleed(second);
+    assert.equal(low.render(formula, display, "#ffffff", layout), first);
+  }
+});
+
+test("base scale controls math size independently of raster density", async () => {
+  for (const baseScale of [0.4, 0.6]) {
+    const renderer = await createTerminalMathRenderer({ baseScale, rasterScale: 1 });
+    for (const display of [false, true]) {
+      const result = renderer.render("x+1", display, "#ffffff", layout);
+      assert.ok(result, renderer.lastFailure?.message);
+      assert.equal(result.pixelsPerEx, layout.cellHeightPx * baseScale);
+      assert.equal(result.deviceScale, 1);
+      assertTransparentBleed(result);
+    }
+    const expanded = renderer.render(String.raw`\frac{a}{b}`, false, "#ffffff", {
+      ...layout, inlineMinScale: 1,
+    });
+    assert.ok(expanded);
+    assert.equal(expanded.pixelsPerEx, layout.cellHeightPx * baseScale);
+    const narrow = renderer.render("a+b+c+d+e+f", true, "#ffffff", { ...layout, maxWidthCells: 2 });
+    assert.ok(narrow);
+    assert.ok(narrow.pixelsPerEx < layout.cellHeightPx * baseScale);
+    assert.equal(narrow.columns, 2);
+  }
+  for (const baseScale of [0, -1, NaN, Infinity]) {
+    await assert.rejects(createTerminalMathRenderer({ baseScale }), /baseScale/u);
+  }
 });
 
 test("uses one fixed font scale for every formula", async () => {
@@ -166,6 +214,36 @@ A @>>{kh}> C
     assert.ok(isPng(result.base64Data));
     assertTransparentBleed(result);
   }
+});
+
+test("all bundled MathJax 4 fonts render synchronously after local preloading", async () => {
+  const images = new Set<string>();
+  for (const font of MATH_FONTS) {
+    const renderer = await createTerminalMathRenderer({ font });
+    const originalLoader = mathjax.asyncLoad;
+    mathjax.asyncLoad = () => { throw new Error("Unexpected render-time module loading"); };
+    try {
+      for (const display of [false, true]) {
+        for (const formula of [
+          String.raw`X_{uv}=|u\rangle\langle v|+|v\rangle\langle u|`,
+          String.raw`\mathbb{R}\quad\mathcal{F}\quad\mathfrak{g}\quad\boldsymbol{\alpha}\quad\sum_{n=0}^{\infty}\frac{x^n}{n!}`,
+          String.raw`\left(\begin{matrix}\sqrt{x}&\int_0^1 f(t)\,dt\\\frac{a}{b}&y\end{matrix}\right)`,
+        ]) {
+          const result = renderer.render(formula, display, "#ffffff", layout);
+          assert.ok(result, `${font}: ${renderer.lastFailure?.message}`);
+          assertTransparentBleed(result);
+          assert.equal(renderer.render(formula, display, "#ffffff", layout), result);
+        }
+      }
+      const simple = renderer.render("x+1", false, "#ffffff", layout);
+      assert.ok(simple, `${font}: ${renderer.lastFailure?.message}`);
+      images.add(simple.base64Data);
+    } finally {
+      mathjax.asyncLoad = originalLoader;
+      renderer.clear();
+    }
+  }
+  assert.equal(images.size, MATH_FONTS.length);
 });
 
 test("rejects invalid LaTeX with structured diagnostics", async () => {

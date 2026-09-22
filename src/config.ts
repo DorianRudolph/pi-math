@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter as pathDelimiter, join, resolve } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { parseMathFont } from "./mathjax-fonts.js";
 import type { SvgMathRendererOptions, TeXDefinitionMap } from "./svg-renderer.js";
 
 export interface MathConfig extends SvgMathRendererOptions {
@@ -40,6 +41,18 @@ function fontFiles(value: unknown, baseDir: string, label: string): string[] | u
   return [...new Set(files)];
 }
 
+function baseScale(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    throw new Error(`${label} must be a positive finite number`);
+  }
+  return value;
+}
+
+function rasterScale(value: unknown, label: string): 1 | 2 {
+  if (value !== 1 && value !== 2) throw new Error(`${label} must be 1 or 2`);
+  return value;
+}
+
 /** Invalid or unset values preserve the legacy one-row behavior. */
 export function loadInlineMinScale(environment: NodeJS.ProcessEnv = process.env): number {
   const value = Number(environment.PI_MATH_INLINE_MIN_SCALE ?? 0);
@@ -59,6 +72,12 @@ export function loadSvgMathRendererOptions(
   const systemFonts = environment.PI_MATH_SYSTEM_FONTS;
   const unknownCommands = environment.PI_MATH_RENDER_UNKNOWN_COMMANDS;
   return {
+    baseScale: environment.PI_MATH_BASE_SCALE === undefined ? defaults.baseScale ?? 0.5
+      : baseScale(Number(environment.PI_MATH_BASE_SCALE), "PI_MATH_BASE_SCALE"),
+    rasterScale: environment.PI_MATH_RASTER_SCALE === undefined ? defaults.rasterScale ?? 2
+      : rasterScale(Number(environment.PI_MATH_RASTER_SCALE), "PI_MATH_RASTER_SCALE"),
+    font: environment.PI_MATH_FONT === undefined ? defaults.font ?? "newcm"
+      : parseMathFont(environment.PI_MATH_FONT, "PI_MATH_FONT"),
     macros: definitions("macros", "PI_MATH_MACROS"),
     environments: definitions("environments", "PI_MATH_ENVIRONMENTS"),
     fontFiles: fonts
@@ -87,7 +106,7 @@ export function loadMathConfig(
   }
   const file = value as Record<string, unknown>;
   for (const key of Object.keys(file)) {
-    if (!["inlineMinScale", "color", "macros", "environments", "systemFonts", "fontFiles", "renderUnknownCommands"].includes(key)) {
+    if (!["font", "baseScale", "rasterScale", "inlineMinScale", "color", "macros", "environments", "systemFonts", "fontFiles", "renderUnknownCommands"].includes(key)) {
       throw new Error(`${path}: unknown option ${key}`);
     }
   }
@@ -105,6 +124,9 @@ export function loadMathConfig(
   }
   return {
     ...loadSvgMathRendererOptions(environment, {
+      baseScale: file.baseScale === undefined ? undefined : baseScale(file.baseScale, `${path}: baseScale`),
+      rasterScale: file.rasterScale === undefined ? undefined : rasterScale(file.rasterScale, `${path}: rasterScale`),
+      font: file.font === undefined ? undefined : parseMathFont(file.font, `${path}: font`),
       macros: definitionMap(file.macros, `${path}: macros`),
       environments: definitionMap(file.environments, `${path}: environments`),
       fontFiles: fontFiles(file.fontFiles, agentDir, `${path}: fontFiles`),

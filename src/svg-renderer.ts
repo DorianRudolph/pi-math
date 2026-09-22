@@ -1,11 +1,13 @@
 import { Resvg } from "@resvg/resvg-js";
-import { liteAdaptor } from "mathjax-full/js/adaptors/liteAdaptor.js";
-import { RegisterHTMLHandler } from "mathjax-full/js/handlers/html.js";
-import { TeX } from "mathjax-full/js/input/tex.js";
-import { AllPackages } from "mathjax-full/js/input/tex/AllPackages.js";
-import { mathjax } from "mathjax-full/js/mathjax.js";
-import { SVG } from "mathjax-full/js/output/svg.js";
-import { SafeHandler } from "mathjax-full/js/ui/safe/SafeHandler.js";
+import { liteAdaptor } from "@mathjax/src/cjs/adaptors/liteAdaptor.js";
+import { RegisterHTMLHandler } from "@mathjax/src/cjs/handlers/html.js";
+import { TeX } from "@mathjax/src/cjs/input/tex.js";
+import { mathjax } from "@mathjax/src/cjs/mathjax.js";
+import { SVG } from "@mathjax/src/cjs/output/svg.js";
+import { SafeHandler } from "@mathjax/src/cjs/ui/safe/SafeHandler.js";
+import "@mathjax/src/cjs/util/asyncLoad/node.js";
+import { loadMathFont, type MathFont } from "./mathjax-fonts.js";
+import { TEX_PACKAGES } from "./mathjax-packages.js";
 import { WeightedLruCache } from "./lru-cache.js";
 
 const MAX_INPUT_LENGTH = 20_000;
@@ -14,8 +16,7 @@ const MAX_RASTER_HEIGHT = 4096;
 const MAX_PNG_BYTES = 12 * 1024 * 1024;
 const MAX_SVG_CACHE_BYTES = 8 * 1024 * 1024;
 const MAX_RASTER_CACHE_BYTES = 64 * 1024 * 1024;
-const BASE_EX_TO_CELL_HEIGHT = 0.5;
-const PREFERRED_DEVICE_SCALE = 2;
+const DEFAULT_BASE_SCALE = 0.5;
 const CONTENT_BLEED_PX = 1;
 const MAX_CONTENT_BLEED_PX = 32;
 const DEFAULT_COLOR = "#b5bd68";
@@ -23,6 +24,10 @@ const DEFAULT_COLOR = "#b5bd68";
 export type TeXDefinitionMap = Record<string, string | unknown[]>;
 
 export interface SvgMathRendererOptions {
+  font?: MathFont;
+  rasterScale?: 1 | 2;
+  /** Logical pixels per MathJax ex, as a fraction of terminal cell height. */
+  baseScale?: number;
   macros?: TeXDefinitionMap;
   environments?: TeXDefinitionMap;
   fontFiles?: string[];
@@ -200,12 +205,12 @@ function alphaBounds(
     : { left: minX, top: minY, right: maxX + 1, bottom: maxY + 1 };
 }
 
-function chooseDeviceScale(logicalWidth: number, logicalHeight: number): number | undefined {
+function chooseDeviceScale(logicalWidth: number, logicalHeight: number, preferredScale: 1 | 2): number | undefined {
   if (
-    logicalWidth * PREFERRED_DEVICE_SCALE <= MAX_RASTER_WIDTH &&
-    logicalHeight * PREFERRED_DEVICE_SCALE <= MAX_RASTER_HEIGHT
+    logicalWidth * preferredScale <= MAX_RASTER_WIDTH &&
+    logicalHeight * preferredScale <= MAX_RASTER_HEIGHT
   ) {
-    return PREFERRED_DEVICE_SCALE;
+    return preferredScale;
   }
   if (logicalWidth <= MAX_RASTER_WIDTH && logicalHeight <= MAX_RASTER_HEIGHT) return 1;
   return undefined;
@@ -214,15 +219,18 @@ function chooseDeviceScale(logicalWidth: number, logicalHeight: number): number 
 export async function createSvgMathRenderer(
   options: SvgMathRendererOptions = {},
 ): Promise<SvgMathRenderer> {
+  const baseScale = options.baseScale ?? DEFAULT_BASE_SCALE;
+  if (!Number.isFinite(baseScale) || baseScale <= 0) {
+    throw new Error("baseScale must be a positive finite number");
+  }
   const adaptor = liteAdaptor({
     cjkCharWidth: 1,
     unknownCharWidth: 0.6,
     unknownCharHeight: 0.8,
   });
   SafeHandler(RegisterHTMLHandler(adaptor));
-  const disabledPackages = new Set(["html", "noerrors"]);
-  if (!options.renderUnknownCommands) disabledPackages.add("noundefined");
-  const packages = AllPackages.filter((name) => !disabledPackages.has(name));
+  const packages = [...TEX_PACKAGES];
+  if (options.renderUnknownCommands) packages.push("noundefined");
   const input = new TeX({
     packages,
     maxBuffer: MAX_INPUT_LENGTH,
@@ -237,10 +245,17 @@ export async function createSvgMathRenderer(
     },
   });
   const output = new SVG({
+    fontData: await loadMathFont(options.font ?? "newcm"),
     fontCache: "none",
+    // Pi wraps whole formula markers. MathJax 4's inline breaking otherwise
+    // emits several sibling SVGs instead of the single raster we need.
+    linebreaks: { inline: false },
     mtextInheritFont: true,
     unknownFamily: "serif",
   });
+  // Load every glyph range from the installed font package before synchronous
+  // Markdown rendering begins. No network access or render-time retries.
+  await output.font.loadDynamicFiles();
   const document = mathjax.document("", {
     InputJax: input,
     OutputJax: output,
@@ -335,7 +350,7 @@ export async function createSvgMathRenderer(
     try {
       const maxLogicalWidth = layout.maxWidthCells * layout.cellWidthPx;
       const maxLogicalHeight = layout.maxHeightCells * layout.cellHeightPx;
-      const basePixelsPerEx = layout.cellHeightPx * BASE_EX_TO_CELL_HEIGHT;
+      const basePixelsPerEx = layout.cellHeightPx * baseScale;
       const needsExternalFonts = svg.source.includes("<text");
 
       // MathJax amscd labels can extend beyond the SVG dimensions it reports.
@@ -387,7 +402,7 @@ export async function createSvgMathRenderer(
 
         const logicalCanvasWidth = columns * layout.cellWidthPx;
         const logicalCanvasHeight = rows * layout.cellHeightPx;
-        const deviceScale = chooseDeviceScale(logicalCanvasWidth, logicalCanvasHeight);
+        const deviceScale = chooseDeviceScale(logicalCanvasWidth, logicalCanvasHeight, options.rasterScale ?? 2);
         if (!deviceScale) {
           return rememberFailure(
             failure("raster-limit", "Formula exceeds the maximum raster dimensions"),
