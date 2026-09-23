@@ -85,6 +85,8 @@ test("fullscreen selection substitutes LaTeX in text flow and uses native copy f
     assert.ok(proseY > 0); // fraction occupies an extra row above
     const x = firstImageCell(lines[proseY]!) + 2;
     const y = proseY + 1;
+    const screen = () => (tui as unknown as { previousScreen: string[] }).previousScreen;
+    const originalLine = screen()[y]!;
     // Selecting only the elevated fraction cells does not copy inline math.
     await terminal.drag(x, y - 1, x + 1, y - 1);
     assert.equal(copied.length, 0);
@@ -92,11 +94,21 @@ test("fullscreen selection substitutes LaTeX in text flow and uses native copy f
     await terminal.drag(x, y, x + 1, y);
     assert.equal(copied.at(-1), inline);
     assert.equal(flashes.at(-1), "Copied!");
+    tui.renderNow();
+    assert.match(screen()[y]!, /\x1b\[27;48;2;128;128;128m/);
     await terminal.drag(x + 1, y, x, y);
     assert.equal(copied.at(-1), inline);
     const right = visibleWidth(lines[proseY]!) - 1 + 2;
     await terminal.drag(2, y, right, y);
     assert.equal(copied.at(-1), `left ${inline} then ${second} right`);
+    tui.renderNow();
+    const highlighted = screen()[y]!;
+    assert.match(highlighted, /\x1b\[7mleft/);
+    assert.match(highlighted, /\x1b\[27;48;2;128;128;128m/);
+    assert.equal(stripTerminalSequences(highlighted), stripTerminalSequences(originalLine));
+    // Highlighting must never duplicate image uploads or clipboard metadata.
+    const controls = /\x1b_G[\s\S]*?\x1b\\|\x1b\]7777;[^\x07]*\x07/g;
+    assert.deepEqual(highlighted.match(controls), originalLine.match(controls));
     // Upper image-only rows disappear from copied text, rather than leaving artifacts.
     await terminal.drag(2, y - 1, right, y);
     assert.equal(copied.at(-1), `  left ${inline} then ${second} right`);
@@ -161,6 +173,8 @@ test("fullscreen selection substitutes LaTeX in text flow and uses native copy f
     tui.renderNow();
     await terminal.drag(nx, baseline, nx + 1, baseline);
     assert.equal(copied.at(-1), inline);
+    tui.renderNow();
+    assert.match(screen()[baseline]!, /\x1b\[27;48;2;128;128;128m/);
   } finally {
     tui.stop();
     patch.uninstall();
@@ -173,7 +187,7 @@ test("fullscreen selection substitutes LaTeX in text flow and uses native copy f
 
 test("regular mode emits no selection metadata and adapter cleanup restores fullscreen methods", async () => {
   const prototype = TuiAltScreen.prototype as unknown as Record<string, unknown>;
-  const methods = ["doRender", "handleViewportInput", "getActiveSelectionText"];
+  const methods = ["doRender", "handleViewportInput", "getActiveSelectionText", "applySelection"];
   const original = methods.map((name) => prototype[name]);
   const adapter = installFullscreenMathCopy();
   const patch = installMarkdownMathPatch(await createTerminalMathRenderer(), (source) => adapter.copy(source));

@@ -1,11 +1,14 @@
 import { TuiAltScreen, sliceByColumn, stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import type { FormulaHitRegion } from "./image-layout.js";
+import { highlightMathSelectionLine } from "./selection-highlight.js";
 
 // Pi has no public selection transform or click-copy API. Keep the private
 // fullscreen adapter here, feature-detected and reversible. Regular TUI is never patched.
-interface SelectionPoint { row: number; col: number; boundary?: boolean; scrollView?: object }
+interface SelectionPoint { row: number; col: number; boundary?: boolean; scrollView?: { scrollTop: number } }
 interface SelectionBounds { start: SelectionPoint; end: SelectionPoint }
 interface LayoutBox {
+  rect: { x: number; y: number; width: number; height: number };
+  clip: { x: number; y: number; width: number; height: number };
   scrollView?: object;
   scrollContentLines?: readonly string[];
   children: LayoutBox[];
@@ -15,7 +18,9 @@ interface FullscreenInternals {
   handleViewportInput(data: string): unknown;
   getActiveSelectionText(): string | undefined;
   getSelectionBounds(): SelectionBounds | undefined;
-  getSelectionColumns(line: string, row: number, selection: SelectionBounds): { start: number; end: number };
+  getSelectionColumns(line: string, row: number, selection: SelectionBounds, minColumn?: number, maxColumn?: number): { start: number; end: number };
+  applySelection(screen: string[], layout?: { root: LayoutBox }): string[];
+  terminal: { columns: number };
   copyTextToClipboard(text: string): Promise<boolean>;
   flash(message: string, durationMs?: number): void;
   previousScreen: string[];
@@ -92,11 +97,11 @@ function spansInLine(line: string): CopySpan[] {
   return spans.sort((a, b) => a.x - b.x);
 }
 
-function findScrollLines(box: LayoutBox, scrollView: object): readonly string[] | undefined {
-  if (box.scrollView === scrollView) return box.scrollContentLines;
+function findScrollBox(box: LayoutBox, scrollView: object): LayoutBox | undefined {
+  if (box.scrollView === scrollView) return box;
   for (const child of box.children) {
-    const lines = findScrollLines(child, scrollView);
-    if (lines) return lines;
+    const found = findScrollBox(child, scrollView);
+    if (found) return found;
   }
   return undefined;
 }
@@ -141,10 +146,11 @@ export function installFullscreenMathCopy(): { copy(source: string): void; unins
   const originalRender = prototype.doRender;
   const originalInput = prototype.handleViewportInput;
   const originalSelection = prototype.getActiveSelectionText;
+  const originalHighlight = prototype.applySelection;
   let active: FullscreenInternals | undefined;
   let installed = true;
   const supported = [originalRender, originalInput, originalSelection, prototype.getSelectionBounds,
-    prototype.getSelectionColumns, prototype.copyTextToClipboard, prototype.flash]
+    prototype.getSelectionColumns, prototype.copyTextToClipboard, prototype.flash, originalHighlight]
     .every((method) => typeof method === "function");
 
   function render(this: FullscreenInternals) {
@@ -164,7 +170,7 @@ export function installFullscreenMathCopy(): { copy(source: string): void; unins
     const bounds = this.getSelectionBounds();
     if (!bounds) return originalSelection.call(this);
     const lines = bounds.start.scrollView
-      ? this.currentLayout && findScrollLines(this.currentLayout.root, bounds.start.scrollView)
+      ? this.currentLayout && findScrollBox(this.currentLayout.root, bounds.start.scrollView)?.scrollContentLines
       : this.previousScreen;
     if (!lines) return originalSelection.call(this);
     const rows = [];
@@ -175,10 +181,41 @@ export function installFullscreenMathCopy(): { copy(source: string): void; unins
     const result = mathSelectionText(rows);
     return result.changed ? result.text : originalSelection.call(this);
   }
+  function highlight(this: FullscreenInternals, screen: string[], layout = this.currentLayout) {
+    const result = originalHighlight.call(this, screen, layout);
+    if (!installed) return result;
+    const bounds = this.getSelectionBounds();
+    if (!bounds) return result;
+    let selection = bounds;
+    let minRow = 0, maxRow = screen.length - 1;
+    let minColumn = 0, maxColumn = this.terminal.columns;
+    if (bounds.start.scrollView) {
+      const box = layout && findScrollBox(layout.root, bounds.start.scrollView);
+      if (!box) return result;
+      minRow = Math.max(0, box.rect.y, box.clip.y);
+      maxRow = Math.min(maxRow, box.rect.y + box.rect.height - 1, box.clip.y + box.clip.height - 1);
+      minColumn = Math.max(0, box.rect.x, box.clip.x);
+      maxColumn = Math.min(maxColumn, box.rect.x + box.rect.width, box.clip.x + box.clip.width);
+      const offset = box.rect.y - bounds.start.scrollView.scrollTop;
+      selection = {
+        start: { ...bounds.start, row: bounds.start.row + offset, col: bounds.start.col + box.rect.x },
+        end: { ...bounds.end, row: bounds.end.row + offset, col: bounds.end.col + box.rect.x },
+      };
+    }
+    return result.map((line, row) => {
+      if (row < minRow || row > maxRow || row < selection.start.row || row > selection.end.row) return line;
+      const source = screen[row]!;
+      const spans = spansInLine(source);
+      if (!spans.length) return line; // Leave ordinary images and prose to Pi.
+      const { start, end } = this.getSelectionColumns(source, row, selection, minColumn, maxColumn);
+      return highlightMathSelectionLine(source, start, end, spans);
+    });
+  }
   if (supported) {
     prototype.doRender = render;
     prototype.handleViewportInput = input;
     prototype.getActiveSelectionText = selection;
+    prototype.applySelection = highlight;
   }
   return {
     copy(source) {
@@ -195,6 +232,7 @@ export function installFullscreenMathCopy(): { copy(source: string): void; unins
       if (prototype.doRender === render) prototype.doRender = originalRender;
       if (prototype.handleViewportInput === input) prototype.handleViewportInput = originalInput;
       if (prototype.getActiveSelectionText === selection) prototype.getActiveSelectionText = originalSelection;
+      if (prototype.applySelection === highlight) prototype.applySelection = originalHighlight;
     },
   };
 }

@@ -38,6 +38,8 @@ source Markdown
 | `src/mathjax-packages.ts` | Explicit registration of local TeX packages |
 | `src/lru-cache.ts` | Entry- and byte-bounded weighted LRU storage |
 | `src/image-layout.ts` | Protocol selection, display centering, row reservation, and inline placement |
+| `src/fullscreen-copy.ts` | Reversible fullscreen click, LaTeX selection, and selection-highlight adapter |
+| `src/selection-highlight.ts` | Image-safe selection styling without duplicating terminal control sequences |
 | `src/kitty-graphics.ts` | Kitty Unicode virtual placements, payload chunking, and cell placeholders |
 
 ## Core invariants
@@ -106,6 +108,8 @@ The scanner:
 - skips fenced and indented code blocks, inline code spans, HTML `<code>`/`<pre>`, HTML comments, and TeX `\verb`/`\verb*`;
 - ignores apparent closing delimiters and environments inside TeX `%` comments; and
 - uses an environment stack so nested `\begin`/`\end` pairs cannot terminate an outer formula early.
+
+Fullscreen selection normally skips image-bearing rows in Pi. The fullscreen adapter's private `applySelection` hook highlights only math-annotated rows, respecting scroll offsets and viewport clipping. Selected prose uses reverse video; selected image cells use a neutral background without changing the foreground or underline colors that encode Kitty image IDs. Control sequences and metadata stay in place and are never duplicated by column slicing. Unannotated rows and regular mode retain Pi's behavior; uninstall restores the hook.
 
 Display markers use a private fenced-code language so Markdown cannot reinterpret them. Inline markers use unique private-use characters repeated to exactly the formula's target cell width; this lets Markdown wrap the surrounding sentence correctly before the marker is replaced.
 
