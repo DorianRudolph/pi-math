@@ -246,6 +246,31 @@ test("all bundled MathJax 4 fonts render synchronously after local preloading", 
   assert.equal(images.size, MATH_FONTS.length);
 });
 
+test("rasterizes golden-ratio inequalities with XML-safe TeX metadata", async () => {
+  const renderer = await createTerminalMathRenderer();
+  const formulas = [
+    String.raw`\|x\|_{\mathbb R/\mathbb Z}:=\min_{k\in\mathbb Z}|x-k|.`,
+    String.raw`0\le j<\frac{3}{\eta}
+\qquad\text{such that}\qquad
+\|j\varphi-x\|_{\mathbb R/\mathbb Z}\le\eta.`,
+    String.raw`\left|\varphi-\frac pq\right|<\frac1{q^2},`,
+    String.raw`\|j\varphi-x\|_{\mathbb R/\mathbb Z}
+\le j\left|\varphi-\frac pq\right|
++\left\|\frac{k}{q}-x\right\|_{\mathbb R/\mathbb Z}
+<\frac1q+\frac1{2q}
+\le\eta.`,
+    String.raw`\begin{aligned}a&<b\\c&>d\end{aligned}`,
+  ];
+  for (const display of [false, true]) {
+    for (const formula of formulas) {
+      const result = renderer.render(formula, display, "#ffffff", layout);
+      assert.ok(result, renderer.lastFailure?.message);
+      assert.ok(isPng(result.base64Data));
+      assertTransparentBleed(result);
+    }
+  }
+});
+
 test("rejects invalid LaTeX with structured diagnostics", async () => {
   const renderer = await createTerminalMathRenderer();
   assert.equal(renderer.render(String.raw`\definitelyUnknown{x}`, true, "#fff000", layout), undefined);

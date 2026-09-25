@@ -283,7 +283,9 @@ export async function createSvgMathRenderer(
     try {
       input.reset();
       const node = document.convert(latex, { display });
-      const source = extractSvg(adaptor.outerHTML(node));
+      // Resvg parses XML, not HTML. TeX metadata attributes can contain '<'
+      // (for example in inequalities), which HTML serialization leaves raw.
+      const source = extractSvg(adaptor.serializeXML(node));
       if (!source || source.includes('data-mml-node="merror"')) {
         const invalid = failure("invalid-svg", "MathJax did not produce a valid SVG formula");
         svgCache.set(key, invalid, cacheWeight(invalid));
